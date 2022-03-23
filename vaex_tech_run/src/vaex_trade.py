@@ -118,9 +118,10 @@ def adjustable_cancel():
                 order_list = result['list']
                 index = random.randint(0, len(order_list) - 1)
                 result = vaex.cancel_order(order_list[index]['orderId'])
-                if 'list' in result:
+                print(result)
+                if 'symbol' in result:
                     interval = 12 * adjustable_time / len(order_list)
-                    print('撤销订单:' + order_list[index]['orderId'] + '  委托单个数：'+ str(len(order_list)) + ' 撤单间隔：'+ str(round(interval,2)) +'s')
+                    print('撤销订单:' + str(order_list[index]['orderId']) + '  委托单个数：'+ str(len(order_list)) + ' 撤单间隔：'+ str(round(interval,2)) +'s')
                 time.sleep(interval)  # 120s/每次撤单的延时时间为未成交单量,相当于恒定未成交单量的速度下，两分钟可以撤销完
         except: continue
 
