@@ -113,11 +113,13 @@ def addentrust():
 def adjustable_cancel():
     while True:
         try:
-            result = json.loads(vaex.get_open_order())
+            result = vaex.get_open_order()
+            print(result)
             if 'list' in result and len(result['list'])>0:
                 order_list = result['list']
                 index = random.randint(0, len(order_list) - 1)
                 result = vaex.cancel_order(order_list[index]['orderId'])
+                print(result)
                 if 'list' in result:
                     interval = 12 * adjustable_time / len(order_list)
                     print('撤销订单:' + order_list[index]['orderId'] + '  委托单个数：'+ str(len(order_list)) + ' 撤单间隔：'+ str(round(interval,2)) +'s')
