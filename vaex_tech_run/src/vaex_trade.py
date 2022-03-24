@@ -1,48 +1,74 @@
 # -*- coding:UTF-8 -*-
 #!/usr/bin/env python
-# @Time  : 2019.11.21
-# @author  : jiao ren
-# @email : renjiao.jiao@qq.com
 
 from vaex_api import Vaex
-import time,json
+import time
+import json
 import random
-import threading
 import datetime
+import asyncio
+import websockets
+import zlib
 
 SYMBOL = "HSPCUSDT"
+DEPTH_PARAM = '{\"event\":\"sub\",\"params\":{\"channel\":\"market_hspcusdt_depth_step0\",\"cb_id\":\"1\"}}'
+ADDR = "wss://wspool.hiotc.pro/kline-api/ws"
 vaex = Vaex(symbol=SYMBOL)
 # 请在这里配置api key和api secret
 vaex.auth(key="", secret="")
 
-# 分别获得买的挂单价格序列buyprice，买的挂单量序列buyvolume，卖的挂单价格序列sellprice，卖的挂单量序列sellvolume
-#  return buyprice, buyvolume, sellprice, sellvolume
-def getDepth(level = 100):
-    # 获取L20,L100,full 水平的深度盘口数据
-    DepthData = vaex.get_depth(limit=level)
-    # 分离出买卖价格序列和买卖量的序列
+# websocket接口
+async def get_dpeth(websocket):
+    recv_text = await websocket.recv()
+    ret = zlib.decompress(recv_text, 16+zlib.MAX_WBITS).decode('utf-8')
+    ret = json.loads(ret)
     sellprice, sellvolume = [], []
     buyprice, buyvolume = [], []
-    if ('asks' in DepthData) and ('bids' in DepthData):
-        for order in DepthData['asks']:
-            sellprice.append(order[0])
-            sellvolume.append(order[1])
-        for order in DepthData['bids']:
-            buyprice.append(order[0])
-            buyvolume.append(order[1])
+    if 'tick' in ret:
+        depth_data = ret['tick']
+        if ('asks' in depth_data) and ('buys' in depth_data):
+            for order in depth_data['asks']:
+                sellprice.append(order[0])
+                sellvolume.append(order[1])
+            for order in depth_data['buys']:
+                buyprice.append(order[0])
+                buyvolume.append(order[1])
     # 分别获得买的挂单价格序列buyprice，买的挂单量序列buyvolume，卖的挂单价格序列sellprice，卖的挂单量序列sellvolume
     return buyprice, buyvolume, sellprice, sellvolume
 
+# api接口
+# # 分别获得买的挂单价格序列buyprice，买的挂单量序列buyvolume，卖的挂单价格序列sellprice，卖的挂单量序列sellvolume
+# #  return buyprice, buyvolume, sellprice, sellvolume
+# def getDepth(level = 100):
+#     # 获取L20,L100,full 水平的深度盘口数据
+#     DepthData = vaex.get_depth(limit=level)
+#     # 分离出买卖价格序列和买卖量的序列
+#     sellprice, sellvolume = [], []
+#     buyprice, buyvolume = [], []
+#     if ('asks' in DepthData) and ('bids' in DepthData):
+#         for order in DepthData['asks']:
+#             sellprice.append(order[0])
+#             sellvolume.append(order[1])
+#         for order in DepthData['bids']:
+#             buyprice.append(order[0])
+#             buyvolume.append(order[1])
+#     # 分别获得买的挂单价格序列buyprice，买的挂单量序列buyvolume，卖的挂单价格序列sellprice，卖的挂单量序列sellvolume
+#     return buyprice, buyvolume, sellprice, sellvolume
+
 #self交易量的区间和频率： 在买一卖一随机取价和区间，两秒后进行撤销
-def self_trade():
+async def self_trade(websocket):
+    reqParam = DEPTH_PARAM
+    await websocket.send(reqParam)
     while True:
         try:
             #print('1self_trade')
-            buyprice, buyvolume, sellprice, sellvolume = getDepth()
+            buyprice, buyvolume, sellprice, sellvolume = await get_dpeth(websocket)
             #print(buyprice, buyvolume, sellprice, sellvolume)
             #print('self_trade')
+            if not buyprice or not sellprice:
+                continue
             direction = random.randint(0, 1)
-            tradeprice = round(random.uniform(float(buyprice[0]), float(sellprice[0])), 3)
+            tradeprice = round(random.uniform(float(buyprice[0]), float(sellprice[0])), 4)
             tradeVolume = round(random.uniform(self_tradeMin, self_tradeMax), 1)
             '''if self_trade_price_max!=0 and tradeprice > self_trade_price_max:
                 tradeprice = self_trade_price_max
@@ -70,27 +96,32 @@ def self_trade():
 
 
 #在买一和买十，卖一和卖十之间随机取价和区间，每6秒下单一次
-def addentrust():
+async def addentrust(websocket):
+    reqParam = DEPTH_PARAM
+    await websocket.send(reqParam)
     while True:
         try:
-            buyprice, buyvolume, sellprice, sellvolume = getDepth()
+            buyprice, buyvolume, sellprice, sellvolume = await get_dpeth(websocket)
+            # print(buyprice, buyvolume, sellprice, sellvolume)
+            if not buyprice or not sellprice:
+                continue
             #在买一和买十，卖一和卖十之间随机取价和区间
             direction = random.randint(0, 1) #随机取方向
             flagDirec=""
             if direction: #如果随机数为1，挂买单
                 if len(buyprice) > 10:
-                    tradeprice = round(random.uniform(float(buyprice[9]), float(buyprice[0])), 3) #随机取价格
+                    tradeprice = round(random.uniform(float(buyprice[9]), float(buyprice[0])), 4) #随机取价格
                     tradeVolume = round(random.uniform(cross_tradeMin, cross_tradeMax), 1) #随机取量
                 else:
-                    tradeprice = round(random.uniform(float(buyprice[-1]), float(buyprice[0])), 3)
+                    tradeprice = round(random.uniform(float(buyprice[-1]), float(buyprice[0])), 4)
                     tradeVolume = round(random.uniform(cross_tradeMin, cross_tradeMax), 1)
                 flagDirec='买'
             else:
                 if len(sellprice) > 10:
-                    tradeprice = round(random.uniform(float(sellprice[0]), float(sellprice[9])), 3)
+                    tradeprice = round(random.uniform(float(sellprice[0]), float(sellprice[9])), 4)
                     tradeVolume = round(random.uniform(cross_tradeMin, cross_tradeMax), 1)
                 else:
-                    tradeprice = round(random.uniform(float(sellprice[0]), float(sellprice[-1])), 3)
+                    tradeprice = round(random.uniform(float(sellprice[0]), float(sellprice[-1])), 4)
                     tradeVolume = round(random.uniform(cross_tradeMin, cross_tradeMax), 1)
                 flagDirec = '卖'
 
@@ -111,6 +142,7 @@ def addentrust():
 
 #延迟一分钟后，陆续撤单（撤单顺序随机）
 def adjustable_cancel():
+    time.sleep(30)
     while True:
         try:
             result = vaex.get_open_order()
@@ -130,7 +162,7 @@ def adjustable_cancel():
 adjustable_time=10
 
 #self交易量的区间和频率： 在买一卖一随机取价和区间，n秒后进行反向操作
-self_tradeFrequence=5  #5秒后反向交易，这个值越小交易越快
+self_tradeFrequence = 5 #5秒后反向交易，这个值越小交易越快
 self_tradeMin=20
 self_tradeMax=50
 
@@ -144,22 +176,17 @@ cross_tradeMax=5
 cross_trade_price_max=0
 cross_trade_price_min=0
 
+def func(target_func):
+    async def main_logic():
+        async with websockets.connect(ADDR) as websocket:
+            await target_func(websocket)
+    asyncio.get_event_loop().run_until_complete(main_logic())   
 
-print('self交易')
-selfTrade_thread = threading.Thread(target=self_trade)
-selfTrade_thread.start()
-
-
-print('cross下单交易开始')
-addentrust_thread = threading.Thread(target=addentrust)
-addentrust_thread.start()
-
-
-time.sleep(60) #60秒后陆续撤单
-
-print('cross撤单交易开始')
-cancel_thread = threading.Thread(target=adjustable_cancel)
-cancel_thread.start()
-
-
+import multiprocessing
+pool = multiprocessing.Pool(processes = 3)
+pool.apply_async(func, (self_trade,))
+pool.apply_async(func, (addentrust,))
+pool.apply_async(adjustable_cancel)
+pool.close()
+pool.join()
 
