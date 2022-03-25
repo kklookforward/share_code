@@ -15,8 +15,7 @@ DEPTH_PARAM = '{\"event\":\"sub\",\"params\":{\"channel\":\"market_hspcusdt_dept
 ADDR = "wss://wspool.hiotc.pro/kline-api/ws"
 vaex = Vaex(symbol=SYMBOL)
 # 请在这里配置api key和api secret
-# vaex.auth(key="", secret="")
-vaex.auth(key="ffb6d8e6c1d7dd22e4501a491807fb03", secret="56c672de7efe17a307425e4e96c8d4e7")
+vaex.auth(key="", secret="")
 
 # websocket接口
 async def get_dpeth(websocket):
