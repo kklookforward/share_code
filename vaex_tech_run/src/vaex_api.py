@@ -15,6 +15,7 @@ class Vaex():
         self.symbol = symbol
         if not self.symbol:
             print("Init error, please add symbol")
+        requests.packages.urllib3.disable_warnings()
 
     def auth(self, key, secret):
         # self.key = bytes(key,'utf-8')
@@ -85,9 +86,9 @@ class Vaex():
             # print(headers)
             # print(self.get_dict_str(payload))
             if method == "GET":
-                r = requests.request(method, full_url, headers=headers)
+                r = requests.request(method, full_url, headers=headers, verify=False)
             else:
-                r = requests.request(method, full_url, headers=headers, data=self.get_dict_str(payload))
+                r = requests.request(method, full_url, headers=headers, data=self.get_dict_str(payload), verify=False)
                 # r = requests.request(method, full_url, headers=headers, data=payload)
             r.raise_for_status()
         except requests.exceptions.HTTPError as err:
@@ -115,7 +116,8 @@ class Vaex():
                 return self.buy(price, amount)
             else:
                 return self.sell(price, amount)
-        except:
+        except Exception as e:
+            print(e)
             print("Trade error")
             return "Trade error"
 

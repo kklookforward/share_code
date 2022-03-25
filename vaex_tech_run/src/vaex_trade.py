@@ -15,10 +15,13 @@ DEPTH_PARAM = '{\"event\":\"sub\",\"params\":{\"channel\":\"market_hspcusdt_dept
 ADDR = "wss://wspool.hiotc.pro/kline-api/ws"
 vaex = Vaex(symbol=SYMBOL)
 # 请在这里配置api key和api secret
-vaex.auth(key="", secret="")
+# vaex.auth(key="", secret="")
+vaex.auth(key="ffb6d8e6c1d7dd22e4501a491807fb03", secret="56c672de7efe17a307425e4e96c8d4e7")
 
 # websocket接口
 async def get_dpeth(websocket):
+    # reqParam = DEPTH_PARAM
+    # await websocket.send(reqParam)
     recv_text = await websocket.recv()
     ret = zlib.decompress(recv_text, 16+zlib.MAX_WBITS).decode('utf-8')
     ret = json.loads(ret)
@@ -61,11 +64,18 @@ async def self_trade(websocket):
     await websocket.send(reqParam)
     while True:
         try:
+            print(f'Start self trade {datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")}...')
             #print('1self_trade')
-            buyprice, buyvolume, sellprice, sellvolume = await get_dpeth(websocket)
+            try:
+                buyprice, buyvolume, sellprice, sellvolume = await get_dpeth(websocket)
+            except Exception as e:
+                print(e)
+                print("Self get depth exception, break.")
+                break
             #print(buyprice, buyvolume, sellprice, sellvolume)
             #print('self_trade')
             if not buyprice or not sellprice:
+                print("Self get depth failed")
                 continue
             direction = random.randint(0, 1)
             tradeprice = round(random.uniform(float(buyprice[0]), float(sellprice[0])), 4)
@@ -91,9 +101,13 @@ async def self_trade(websocket):
                     else:
                         print('self交易:  self买回失败')
             else:
-                print("Trade fail....")
-        except: continue
-
+                print("Self trade fail....")
+                time.sleep(1)
+        except Exception as e:
+            print(e)
+            print("Self trade exception, break")
+            time.sleep(1)
+            break
 
 #在买一和买十，卖一和卖十之间随机取价和区间，每6秒下单一次
 async def addentrust(websocket):
@@ -101,10 +115,20 @@ async def addentrust(websocket):
     await websocket.send(reqParam)
     while True:
         try:
-            buyprice, buyvolume, sellprice, sellvolume = await get_dpeth(websocket)
+            print(f'Start cross trade {datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")}...')
+            try:
+                buyprice, buyvolume, sellprice, sellvolume = await get_dpeth(websocket)
+            except Exception as e:
+                print(e)
+                print("Cross get depth exception, break.")
+                time.sleep(1)
+                break
             # print(buyprice, buyvolume, sellprice, sellvolume)
             if not buyprice or not sellprice:
+                print("Cross get depth failed, retry")
                 continue
+            else:
+                print("Cross get depth success...")
             #在买一和买十，卖一和卖十之间随机取价和区间
             direction = random.randint(0, 1) #随机取方向
             flagDirec=""
@@ -131,13 +155,16 @@ async def addentrust(websocket):
                 tradeprice = cross_trade_price_min
             result = vaex.trade(price=tradeprice, amount=tradeVolume, direction=direction)
             if 'symbol' in result:
-                print('\ncross交易订单:  价格' + str(tradeprice) + '  ' + datetime.datetime.now().strftime(
-                "%Y/%m/%d %H:%M:%S") + ' 下单量' + str(tradeVolume) + ' 方向:' + flagDirec)
+                print('\ncross交易订单:  价格' + str(tradeprice) + '  ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+                      + ' 下单量' + str(tradeVolume) + ' 方向:' + flagDirec)
             else:
-                print("Trade fail")
-
-            time.sleep(cross_tradeFrequence) #每6秒下单一次
-        except: continue
+                print("Cross trade fail")
+            time.sleep(cross_tradeFrequence)
+        except Exception as e:
+            print(e)
+            print("Cross exception, break")
+            time.sleep(1)
+            break
 
 
 #延迟一分钟后，陆续撤单（撤单顺序随机）
@@ -146,6 +173,7 @@ def adjustable_cancel():
     while True:
         try:
             result = vaex.get_open_order()
+            print("Get open order successful")
             if 'list' in result and len(result['list'])>0:
                 order_list = result['list']
                 index = random.randint(0, len(order_list) - 1)
@@ -155,20 +183,23 @@ def adjustable_cancel():
                     interval = 12 * adjustable_time / len(order_list)
                     print('撤销订单:' + str(order_list[index]['orderId']) + '  委托单个数：'+ str(len(order_list)) + ' 撤单间隔：'+ str(round(interval,2)) +'s')
                 time.sleep(interval)  # 120s/每次撤单的延时时间为未成交单量,相当于恒定未成交单量的速度下，两分钟可以撤销完
-        except: continue
+        except Exception as e:
+            print(e)
+            print("Cancel exception, continue")
+            time.sleep(1)
 
 
 # 撤单时间间隔，越小越快
-adjustable_time=10
+adjustable_time=30
 
 #self交易量的区间和频率： 在买一卖一随机取价和区间，n秒后进行反向操作
-self_tradeFrequence = 5 #5秒后反向交易，这个值越小交易越快
+self_tradeFrequence = 10 #5秒后反向交易，这个值越小交易越快
 self_tradeMin=20
 self_tradeMax=50
 
 
 #cross交易量的区间和频率： 在买一和买十，卖一和卖十之间随机取价和区间，每n秒下单一次
-cross_tradeFrequence = 5 #这个值越小交易越快
+cross_tradeFrequence = 10 #这个值越小交易越快
 cross_tradeMin=2
 cross_tradeMax=5
 
@@ -177,10 +208,16 @@ cross_trade_price_max=0
 cross_trade_price_min=0
 
 def func(target_func):
-    async def main_logic():
-        async with websockets.connect(ADDR) as websocket:
-            await target_func(websocket)
-    asyncio.get_event_loop().run_until_complete(main_logic())   
+    while True:
+        try:
+            print("Start main func...")
+            async def main_logic():
+                async with websockets.connect(ADDR, ping_interval=None) as websocket:
+                    await target_func(websocket)
+            asyncio.get_event_loop().run_until_complete(main_logic())
+        except Exception as e:
+            print(e)
+            print("main func failed, restart")
 
 import multiprocessing
 pool = multiprocessing.Pool(processes = 3)
