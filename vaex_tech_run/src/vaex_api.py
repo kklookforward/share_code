@@ -2,19 +2,24 @@
 #!/usr/bin/env python
 import hmac
 import hashlib
-import requests
-import sys
+import traceback
 import time
-import base64
 import json
-from collections import OrderedDict
+import re
+from collections import namedtuple
+
+import logging
+logging.basicConfig(level=logging.INFO,
+                    format = '%(asctime)s - %(levelname)s - %(message)s')
+
+import requests
 
 class Vaex():
     def __init__(self,base_url='https://openapi.vaex.tech/sapi/v1/', symbol=""):
         self.base_url = base_url
         self.symbol = symbol
         if not self.symbol:
-            print("Init error, please add symbol")
+            logging.error("Init error, please add symbol")
         requests.packages.urllib3.disable_warnings()
 
     def auth(self, key, secret):
@@ -30,7 +35,7 @@ class Vaex():
             r = requests.request(method, r_url, params=payload)
             r.raise_for_status()
         except requests.exceptions.HTTPError as err:
-            print(err)
+            logging.error(err)
         if r.status_code == 200:
             return r.json()
 
@@ -51,7 +56,7 @@ class Vaex():
     def signed_request(self, method, api_url, **payload):
         """request a signed url"""
         if not self.key or not self.secret:
-            print("Please config api key and secret")
+            logging.error("Please config api key and secret")
             exit(-1)
         param=''
         if payload:
@@ -89,11 +94,9 @@ class Vaex():
                 r = requests.request(method, full_url, headers=headers, verify=False)
             else:
                 r = requests.request(method, full_url, headers=headers, data=self.get_dict_str(payload), verify=False)
-                # r = requests.request(method, full_url, headers=headers, data=payload)
             r.raise_for_status()
-        except requests.exceptions.HTTPError as err:
-            print(err)
-            print(r.text)
+        except Exception as e:
+            traceback.print_exc()
         if r.status_code == 200:
             return r.json()
 
@@ -111,15 +114,10 @@ class Vaex():
 
     def trade(self, price, amount, direction):
         """trade someting, buy(1) or sell(0)"""
-        try:
-            if direction == 1:
-                return self.buy(price, amount)
-            else:
-                return self.sell(price, amount)
-        except Exception as e:
-            print(e)
-            print("Trade error")
-            return "Trade error"
+        if direction == 1:
+            return self.buy(price, amount)
+        else:
+            return self.sell(price, amount)
 
     def buy(self, price, amount):
         """buy someting(done)"""
@@ -133,12 +131,9 @@ class Vaex():
         """get specfic order(done)"""
         return self.signed_request('GET', 'order', orderId=order_id, symbol=self.symbol)
 
-    def get_open_order(self, limit=None):
+    def get_open_order(self, limit=100):
         """get specfic order(done)"""
-        if limit:
-            return self.signed_request('GET', 'openOrders', symbol=self.symbol, limit=limit)
-        else:
-            return self.signed_request('GET', 'openOrders', symbol=self.symbol)
+        return self.signed_request('GET', 'openOrders', symbol=self.symbol, limit=limit)
 
     def create_order_test(self):
         """get specfic order(done)"""
@@ -148,10 +143,45 @@ class Vaex():
     def cancel_order(self,order_id):
         """cancel specfic order(done)"""
         return self.signed_request('POST', 'cancel', orderId=order_id, symbol=self.symbol)
+    
+    def get_current_order(self, limit=100):
+        """get current orders"""
+        return self.signed_request('GET', 'openOrders', symbol=self.symbol, limit=limit)
+    
+    def get_my_trade(self, limit=100):
+        """get my trades"""
+        return self.signed_request('GET', 'myTrades', symbol=self.symbol, limit=limit)
+
+    def check_trade_status(self, order_ret):
+        if 'status' in order_ret:
+            if re.search('new|fill', order_ret['status'].lower()):
+                return True
+            else:
+                return False
+
+    def check_depth_status(self, depth_ret):
+        if 'asks' in depth_ret and 'bids' in depth_ret:
+            return True
+        else:
+            return False
+    
+    def get_depth_list(self, depth_direction='asks', limit=100):
+        depth_infos = self.get_depth(limit=100)
+        if self.check_depth_status(depth_infos):
+            depth_infos = depth_infos[depth_direction]
+            if len(depth_infos) > 0:
+                return depth_infos
+
+CancelRecord = namedtuple('CancelRecord', ['orderId', 'side', 'price', 'origQty', 'executedQty', 'time'])
+
+
 
 
 if __name__ == "__main__":
-    print("Start...")
-    # vaex = Vaex(symbol="btcusdt")
-    vaex = Vaex(symbol="HSPCUSDT")
-    print(vaex.get_depth())
+    logging.info("Start...")
+    from default_config import config
+    vaex = Vaex(symbol=config['symbol'])
+    vaex.auth(key=config['key'], secret=config['secret'])
+    logging.info(vaex.get_depth())
+    # target_trade_action(vaex=vaex, adjusted_percent=0.01)
+    # target_trade_allocation(vaex, 0.01, 0, 2)
